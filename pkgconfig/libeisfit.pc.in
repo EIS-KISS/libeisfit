@@ -1,0 +1,9 @@
+includedir=@CMAKE_INSTALL_PREFIX@/include
+libdir=@CMAKE_INSTALL_PREFIX@/lib
+
+Name: libeisfit
+Description: Levenberg-Marquardt fitting of equivalent circuit models to EIS spectra
+Version: @CMAKE_PROJECT_VERSION_MAJOR@.@CMAKE_PROJECT_VERSION_MINOR@.@CMAKE_PROJECT_VERSION_PATCH@
+Requires: libeisgenerator libkisstype
+Libs: -L${libdir} -leisfit
+Cflags: -I${includedir}
