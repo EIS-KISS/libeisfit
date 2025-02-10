@@ -41,6 +41,7 @@ enum FitArgpKey
 	OPT_SEED,
 	OPT_FIT_LIMIT,
 	OPT_SEARCH_POINTS,
+	OPT_EXACT_JACOBIAN,
 };
 
 static struct argp_option options[] =
@@ -57,6 +58,7 @@ static struct argp_option options[] =
   {"recursive",		'R', 0,			0,	"when -f is a directory, also fit the spectra in its subdirectories"},
   {"batch-size",	'b', "[NUMBER]",	0,	"number of spectra fitted simultaneously when -f is a directory, default: 64. Spectra only share a batch when they share a frequency grid"},
   {"search-points",	OPT_SEARCH_POINTS, "[NUMBER]", 0, "thin the spectrum to this many evenly spaced points for the search only, default: 0, use every point. The jacobian costs one backward per point, so a tenth of the points is a tenth of the search time. Quality is scored on every point regardless, only the set of local minima the optimiser explores changes"},
+  {"exact-jacobian",	OPT_EXACT_JACOBIAN, 0, 0, "take the exact jacobian through autograd instead of the default forward-difference approximation. The approximation runs one simulation per parameter rather than one backward pass per point and is far faster for few-parameter models, at a small loss of jacobian accuracy"},
   { 0 }
 };
 
@@ -72,6 +74,7 @@ struct Config
 	bool recursive = false;
 	int64_t batchSize = 64;
 	int64_t searchPoints = 0;
+	bool exactJacobian = false;
 };
 
 static error_t parse_opt (int key, char *arg, struct argp_state *state)
@@ -117,6 +120,9 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case OPT_SEARCH_POINTS:
 			config->searchPoints = std::stoll(arg);
+			break;
+		case OPT_EXACT_JACOBIAN:
+			config->exactJacobian = true;
 			break;
 		default:
 			return ARGP_ERR_UNKNOWN;

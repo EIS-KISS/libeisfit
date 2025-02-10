@@ -34,6 +34,8 @@ struct FitOptions
 	uint64_t seed = 0x5655;
 	// Spectra is decimated to this nummber of poiints to avoid jacobian costs one backward pass explosion if > 0
 	int64_t searchPoints = 0;
+	bool approximateJacobian = true;
+	double jacobianStep = 1e-5;
 };
 
 

@@ -115,6 +115,8 @@ struct Problem
 	torch::Tensor logUpper;
 	int64_t parameterCount = 0;
 	int64_t evaluations = 0;
+	bool approximateJacobian = false;
+	double jacobianStep = 1e-5;
 
 	explicit Problem(const std::string& from): model(from), modelString(from)
 	{
@@ -156,7 +158,7 @@ struct Problem
 		return torch::sum(r*r).item<double>();
 	}
 
-	torch::Tensor jacobian(const torch::Tensor& logParameters)
+	torch::Tensor jacobianExact(const torch::Tensor& logParameters)
 	{
 		torch::Tensor physical = torch::pow(10.0, clampToBox(logParameters));
 		torch::Tensor leaf = physical.clone().detach().requires_grad_();
@@ -173,6 +175,25 @@ struct Problem
 			rows.push_back(gradient.at(0).defined() ? gradient.at(0) : torch::zeros_like(leaf));
 		}
 		return torch::stack(rows, 0) * (physical * std::log(10.0)).reshape({1, -1});
+	}
+
+	torch::Tensor jacobianApprox(const torch::Tensor& logParameters)
+	{
+		torch::Tensor base = residual(logParameters); // {2N}
+		std::vector<torch::Tensor> columns;
+		columns.reserve(parameterCount);
+		for(int64_t i = 0; i < parameterCount; ++i)
+		{
+			torch::Tensor bumped = logParameters.clone();
+			bumped[i] = logParameters[i] + jacobianStep;
+			columns.push_back((residual(bumped) - base)/jacobianStep); // {2N}
+		}
+		return torch::stack(columns, 1); // {2N,n}
+	}
+
+	torch::Tensor jacobian(const torch::Tensor& logParameters)
+	{
+		return approximateJacobian ? jacobianApprox(logParameters) : jacobianExact(logParameters);
 	}
 };
 
@@ -433,6 +454,8 @@ struct BatchProblem
 	int64_t parameterCount = 0;
 	int64_t batch = 0;
 	int64_t evaluations = 0;
+	bool approximateJacobian = false;
+	double jacobianStep = 1e-5;
 
 	explicit BatchProblem(const std::string& from): model(from), modelString(from)
 	{
@@ -474,8 +497,8 @@ struct BatchProblem
 		return torch::sum(r*r, 0);
 	}
 
-	// {2N,n,B}
-	torch::Tensor jacobian(const torch::Tensor& logParameters)
+	// {2N,n,B}: exact jacobian in log10 space, one autograd backward pass per residual row.
+	torch::Tensor jacobianExact(const torch::Tensor& logParameters)
 	{
 		torch::Tensor physical = torch::pow(10.0, clampToBox(logParameters));
 		torch::Tensor leaf = physical.clone().detach().requires_grad_();
@@ -492,6 +515,28 @@ struct BatchProblem
 			rows.push_back(gradient.at(0).defined() ? gradient.at(0) : torch::zeros_like(leaf));
 		}
 		return torch::stack(rows, 0)*(physical*std::log(10.0)).unsqueeze(0);
+	}
+
+	// {2N,n,B}: forward-difference jacobian in log10 space. One extra batched simulation per
+	// parameter serves the whole batch, against the exact jacobian's one backward pass per
+	// residual row per batch column.
+	torch::Tensor jacobianApprox(const torch::Tensor& logParameters)
+	{
+		torch::Tensor base = residual(logParameters); // {2N,B}
+		std::vector<torch::Tensor> parts;
+		parts.reserve(parameterCount);
+		for(int64_t i = 0; i < parameterCount; ++i)
+		{
+			torch::Tensor bumped = logParameters.clone();
+			bumped[i] = logParameters[i] + jacobianStep;
+			parts.push_back((residual(bumped) - base)/jacobianStep); // {2N,B}
+		}
+		return torch::stack(parts, 1); // {2N,n,B}
+	}
+
+	torch::Tensor jacobian(const torch::Tensor& logParameters)
+	{
+		return approximateJacobian ? jacobianApprox(logParameters) : jacobianExact(logParameters);
 	}
 };
 
@@ -604,6 +649,8 @@ FitResult eisFit(torch::Tensor spectra, torch::Tensor omegas, const std::string&
 	FitResult result;
 
 	Problem problem(modelString);
+	problem.approximateJacobian = options.approximateJacobian;
+	problem.jacobianStep = options.jacobianStep;
 
 	problem.omegas = omegas.to(torch::kFloat64).reshape({omegas.numel(), 1});
 	problem.target = spectra.to(torch::kComplexDouble).reshape({spectra.numel()});
@@ -813,6 +860,8 @@ std::vector<FitResult> eisFitBatch(const torch::Tensor& spectra, const torch::Te
 
 	BatchProblem problem(modelString);
 	problem.batch = batch;
+	problem.approximateJacobian = options.approximateJacobian;
+	problem.jacobianStep = options.jacobianStep;
 	problem.omegas = omegas.to(torch::kFloat64).reshape({points, 1});
 	problem.target = rows.t().contiguous();
 

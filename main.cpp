@@ -304,6 +304,7 @@ int fitDirectory(const Config& config)
 	options.seed = config.seed;
 	options.fitLimit = config.fitLimit;
 	options.searchPoints = config.searchPoints;
+	options.approximateJacobian = !config.exactJacobian;
 
 	const int64_t batch = std::max<int64_t>(1, config.batchSize);
 
@@ -448,6 +449,7 @@ int main(int argc, char** argv)
 	options.seed = config.seed;
 	options.fitLimit = config.fitLimit;
 	options.searchPoints = config.searchPoints;
+	options.approximateJacobian = !config.exactJacobian;
 
 	Log(Log::INFO)<<"Fitting "<<config.modelString<<" to "<<config.fileName<<" ("<<measured.size()
 		<<" points, "<<sci(measured.front().omega)<<" to "<<sci(measured.back().omega)<<" rad/s)";
