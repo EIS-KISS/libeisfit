@@ -12,6 +12,14 @@ find_package(Torch REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_search_module(KISSTYPE REQUIRED libkisstype)
 pkg_search_module(EIS REQUIRED libeisgenerator)
+find_package(sciplot)
+
+if(NOT sciplot_FOUND)
+	message(WARNING "Sciplot not found, eisfit will be unable to generate plots")
+else()
+	add_definitions(-DENABLE_PLOTTING)
+	message("Sciplot found, plotting enabled")
+endif()
 
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
 	set(CMAKE_INSTALL_PREFIX "/usr" CACHE PATH "..." FORCE)
@@ -19,6 +27,12 @@ endif(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
 
 set(SRC_FILES
 	fit.cpp
+	modelscript.cpp
+	util.cpp
+	bounds.cpp
+	diagnostics.cpp
+	problem.cpp
+	batchproblem.cpp
 )
 
 set(API_HEADERS_CPP_DIR eisfit/)
@@ -51,10 +65,19 @@ install(TARGETS ${PROJECT_NAME}_static DESTINATION lib)
 install(TARGETS ${PROJECT_NAME}_obj FILE_SET header_set DESTINATION include/${PROJECT_NAME})
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/pkgconfig/libeisfit.pc DESTINATION lib/pkgconfig)
 
-add_executable(${PROJECT_NAME}_cli main.cpp log.cpp)
+add_executable(${PROJECT_NAME}_cli main.cpp log.cpp ploting.cpp)
 set_target_properties(${PROJECT_NAME}_cli PROPERTIES OUTPUT_NAME ${PROJECT_NAME})
 add_dependencies(${PROJECT_NAME}_cli ${PROJECT_NAME})
 target_link_libraries(${PROJECT_NAME}_cli ${PROJECT_NAME})
+if(sciplot_FOUND)
+	target_link_libraries(${PROJECT_NAME}_cli sciplot::sciplot)
+endif()
 target_include_directories(${PROJECT_NAME}_cli PUBLIC . ${API_HEADERS_CPP_DIR})
 set_target_properties(${PROJECT_NAME}_cli PROPERTIES COMPILE_FLAGS ${COMMON_COMPILE_FLAGS} LINK_FLAGS ${COMMON_LINK_FLAGS})
 install(TARGETS ${PROJECT_NAME}_cli DESTINATION bin)
+
+option(EISFIT_BUILD_TESTS "Build the libeisfit unit test battery" ON)
+if(EISFIT_BUILD_TESTS)
+	enable_testing()
+	add_subdirectory(tests)
+endif()

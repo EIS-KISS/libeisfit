@@ -42,6 +42,7 @@ enum FitArgpKey
 	OPT_FIT_LIMIT,
 	OPT_SEARCH_POINTS,
 	OPT_EXACT_JACOBIAN,
+	OPT_PLOT,
 };
 
 static struct argp_option options[] =
@@ -59,6 +60,7 @@ static struct argp_option options[] =
   {"batch-size",	'b', "[NUMBER]",	0,	"number of spectra fitted simultaneously when -f is a directory, default: 64. Spectra only share a batch when they share a frequency grid"},
   {"search-points",	OPT_SEARCH_POINTS, "[NUMBER]", 0, "thin the spectrum to this many evenly spaced points for the search only, default: 0, use every point. The jacobian costs one backward per point, so a tenth of the points is a tenth of the search time. Quality is scored on every point regardless, only the set of local minima the optimiser explores changes"},
   {"exact-jacobian",	OPT_EXACT_JACOBIAN, 0, 0, "take the exact jacobian through autograd instead of the default forward-difference approximation. The approximation runs one simulation per parameter rather than one backward pass per point and is far faster for few-parameter models, at a small loss of jacobian accuracy"},
+  {"plot",		OPT_PLOT, "[FILE]",	0,	"write a nyquist plot of the measured spectrum and the fitted circuit into one figure to this file, its format taken from the extension (png, svg, pdf). When -f is a directory this is a directory and one plot per fitted spectrum is written into it under its own name"},
   { 0 }
 };
 
@@ -67,6 +69,7 @@ struct Config
 	std::filesystem::path fileName;
 	std::string modelString;
 	std::filesystem::path outputFilename;
+	std::filesystem::path plotFilename;
 	int restarts = 16;
 	int64_t evaluations = 2000;
 	uint64_t seed = 0x5eed;
@@ -123,6 +126,9 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			break;
 		case OPT_EXACT_JACOBIAN:
 			config->exactJacobian = true;
+			break;
+		case OPT_PLOT:
+			config->plotFilename.assign(arg);
 			break;
 		default:
 			return ARGP_ERR_UNKNOWN;

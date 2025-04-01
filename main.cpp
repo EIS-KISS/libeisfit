@@ -33,11 +33,13 @@
 #include <sstream>
 #include <string>
 #include <torch/torch.h>
+#include <valarray>
 #include <vector>
 
 #include "eisfit/fit.h"
 #include "log.h"
 #include "options.h"
+#include "ploting.h"
 
 namespace
 {
@@ -200,6 +202,46 @@ bool writeFittedSpectra(const std::filesystem::path& output, const std::filesyst
 	return true;
 }
 
+/**
+ * Draw the measured spectrum and the fitted circuit into one nyquist plot, -Im(Z) over Re(Z). The
+ * measurement is drawn as points and the fit as a line through them, so a deviation is visible at a
+ * glance. The two axes share their scale so a semicircle keeps its shape.
+ */
+bool writeSpectrumPlot(const std::filesystem::path& output, const FitResult& fit, const std::vector<eis::DataPoint>& measured)
+{
+	std::valarray<double> measuredReal(measured.size());
+	std::valarray<double> measuredImag(measured.size());
+	for(size_t i = 0; i < measured.size(); ++i)
+	{
+		measuredReal[i] = measured[i].im.real();
+		measuredImag[i] = -static_cast<double>(measured[i].im.imag());
+	}
+
+	torch::Tensor fitted = fit.fittedSpectra.to(torch::kComplexDouble);
+	auto accessor = fitted.accessor<c10::complex<double>, 1>();
+	size_t points = static_cast<size_t>(accessor.size(0));
+	std::valarray<double> fittedReal(points);
+	std::valarray<double> fittedImag(points);
+	for(size_t i = 0; i < points; ++i)
+	{
+		fittedReal[i] = accessor[i].real();
+		fittedImag[i] = -accessor[i].imag();
+	}
+
+	PlotOptions options;
+	options.xLabel = "Re(Z) / Ohm";
+	options.yLabel = "-Im(Z) / Ohm";
+	options.square = true;
+	options.showLegend = true;
+
+	std::vector<PlotCurve> curves = {
+		{measuredReal, measuredImag, "measured", PLOT_TYPE_SCATTER},
+		{fittedReal, fittedImag, "fitted", PLOT_TYPE_LINE},
+	};
+
+	return save2dPlot(output, curves, options);
+}
+
 const char* verdictName(const FitResult& fit)
 {
 	if(not fit.success)
@@ -297,6 +339,8 @@ int fitDirectory(const Config& config)
 
 	if(!config.outputFilename.empty())
 		std::filesystem::create_directories(config.outputFilename);
+	if(!config.plotFilename.empty())
+		std::filesystem::create_directories(config.plotFilename);
 
 	FitOptions options;
 	options.restarts = config.restarts;
@@ -379,6 +423,17 @@ int fitDirectory(const Config& config)
 					else
 						Log(Log::DEBUG)<<"Wrote the spectrum of the fitted circuit to "<<out;
 				}
+
+				if(!config.plotFilename.empty() && fit.success)
+				{
+					std::filesystem::path out = config.plotFilename
+						/ std::filesystem::relative(entry.path, config.fileName);
+					out.replace_extension(".png");
+					if(!writeSpectrumPlot(out, fit, entry.measured))
+						writeFailed = true;
+					else
+						Log(Log::DEBUG)<<"Wrote the nyquist plot to "<<out;
+				}
 			}
 		}
 	}
@@ -418,6 +473,10 @@ int main(int argc, char** argv)
 		Log(Log::ERROR)<<"--fit-limit must be a positive fraction";
 		return 1;
 	}
+#ifndef ENABLE_PLOTTING
+	if(!config.plotFilename.empty())
+		Log(Log::WARN)<<"eisfit was built without sciplot, --plot will not write any figure";
+#endif
 
 	if(std::filesystem::is_directory(config.fileName))
 		return fitDirectory(config);
@@ -482,6 +541,9 @@ int main(int argc, char** argv)
 
 	if(!config.outputFilename.empty() && !writeFittedSpectra(config.outputFilename, config.fileName, fit,
 			measured, modelString))
+		return 3;
+
+	if(!config.plotFilename.empty() && !writeSpectrumPlot(config.plotFilename, fit, measured))
 		return 3;
 
 	return fit.verdict == FitVerdict::FIT_VERDICT_UNFITTED ? 4 : 0;
